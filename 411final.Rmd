@@ -1,0 +1,220 @@
+---
+title: "Analyzing the Greater Seattle Area K-Pop Community Using R"
+author: "Priya Rasal"
+subtitle: "BIS 411 Sec. A"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# I. Overview 
+In this project, I wanted to see how the social media network for the K-pop community in the Greater Seattle Area looked. I run a fanbase for the fans of the K-pop group <a href="https://twice.jype.com" target="_blank">TWICE</a> called <a href="https://instagram.com/seattleonces" target="_blank">seattleonces</a> . I manually collected usernames from the following and follower lists of seattleonces as a starting point, and slowly added data from other local fanbases, small businesses, and K-pop stores to build a more expansive network. After this, I used various libraries found within R to clean up the data, create graphs, and perform analysis measures like degree and betweenness centrality, as well as Louvain clustering to identify possible communities. 
+
+# II. Data 
+Although I tried to sort the data as cleanly as possible, there are some errors, namely in classification of attributes. Not every follower/user followed is accounted for as lists could only be loaded manually on Instagram. Even so, there are around 7200+ unique usernames in the dataset, ranging from the Instagram accounts of K-pop groups/soloists, local businesses, event hosts, and even some local cafes/businesses. The dataset is divided into two sheets and can be found here:
+
+- <a href="https://docs.google.com/spreadsheets/d/1DO2VhlFfeA0meePyf4codhRhDIW9JkiX/edit?usp=sharing&ouid=117124373153073291765&rtpof=true&sd=true" target="_blank">seattleonces_following_network.xlsx</a>
+- <a href="https://docs.google.com/spreadsheets/d/1I6biXgSebWxu_9ML9RrX3SlUt9sLf1PL/edit?usp=sharing&ouid=117124373153073291765&rtpof=true&sd=true" target="_blank">seaonce_attributes.xlsx</a>
+
+Data collected was publically available and no hyperspecific location data was collected, especially for accounts that appeared to be for personal use (unless location appeared in username itself, for ex. 'seattleonces', 'magicshopinseattle', etc.)
+
+
+# III. Loading Necessary Libraries
+I used a variety of libraries to conduct this analysis:
+
+- 'readxl': Reading .xlsx file formats into R
+- 'igraph': Creating graph objects, calculating centrality measures, manipulating basic graphs
+- 'tidygraph': Adding 'tidyverse' friendly interface to 'igraph' objects
+- 'ggplot2': Elements of plots and to assist 'ggraph'
+- 'ggraph': Visualizing large, complex networks with layouts and adding nodes, edges, labels, etc.
+- 'dplyr': Manipulating data
+- 'ggrepel': To help make plots made with 'ggraph' more legible
+
+
+```{r loading libraries}
+library(readxl)
+library(igraph)
+library(tidygraph)
+library(ggplot2)
+library(ggraph)
+library(dplyr)
+library(ggrepel)
+```
+
+# IV. Loading in Data
+```{r loading data}
+# Load edge list and node attributes
+edges <- read_excel("seattleonces_following_network.xlsx")
+nodes <- read_excel("seaonce_attributes.xlsx")
+colnames(nodes)[1] <- "name"  
+```
+
+# V. Cleaning Up Data, Creating Graph Object, Converting to 'tidygraph'
+Data was cleaned to remove any blank cells or usernames with no attributes. 
+```{r clean and graph, fig.align='center'}
+# Create igraph object
+g <- graph_from_data_frame(d = edges, vertices = nodes, directed = TRUE)
+
+# Remove nodes with degree 0
+g <- delete_vertices(g, V(g)[degree(g) == 0])
+
+# Convert to tidygraph
+tg <- as_tbl_graph(g)
+
+ggraph(tg, layout = "fr") +
+  geom_edge_link(alpha = 0.2, color = "darkgray") +
+  geom_node_point(color = "purple", size = 2) +
+  theme_void() +
+  ggtitle("Greater Seattle Area K-Pop Community") +
+  labs(caption = "Data Gathered Manually via Instagram") +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    plot.caption = element_text(hjust = 0.5, size = 10, face = "italic")
+  )
+```
+
+
+The first graph generated is a very general look at the Greater Seattle Area K-pop Community (hereafter referred to as 'G.S.A. K-pop Community'). At first glance, there seems to be some clustering.
+
+
+# VI. Plotting Network with Degree Centrality
+```{r deg centrality plot, fig.align='center'}
+# Compute Degree Centrality
+Degree <- degree(g)
+V(g)$Degree <- Degree
+
+# Extract layout
+layout <- create_layout(tg, layout = "fr")
+
+# Top 5 nodes
+top_degree_nodes <- names(sort(Degree, decreasing = TRUE))[1:5]
+
+# Plot
+ggraph(layout) +
+  geom_edge_link(alpha = 0.2) +
+  geom_node_point(aes(size = Degree), color = "purple") +
+  geom_text_repel(
+    data = layout[layout$name %in% top_degree_nodes, ],
+    aes(x = x, y = y, label = name),
+    size = 3,
+    color = "white",
+    segment.color = "white",
+    box.padding = 0.5,
+    point.padding = 0.3
+  ) +
+  theme_void() +
+  ggtitle("G.S.A. K-Pop Community") +
+  labs(caption = "Degree Centrality. Data Gathered Manually via Instagram") +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    plot.caption = element_text(hjust = 0.5, size = 10, face = "italic")
+  )
+```
+
+# VII. Plotting Network with Betweenness Centrality
+```{r betweenness, fig.align='center'}
+# Compute Betweenness Centrality
+Betweenness <- betweenness(g)
+V(g)$Betweenness <- Betweenness
+
+# Extract layout
+layout <- create_layout(tg, layout = "fr")
+
+# Top 5 nodes
+top_betweenness_nodes <- names(sort(Betweenness, decreasing = TRUE))[1:5]
+
+# Plot
+ggraph(layout) +
+  geom_edge_link(alpha = 0.2) +
+  geom_node_point(aes(size = Betweenness), color = "purple") +
+  geom_text_repel(
+    data = layout[layout$name %in% top_degree_nodes, ],
+    aes(x = x, y = y, label = name),
+    size = 3,
+    color = "white",
+    segment.color = "white",
+    box.padding = 0.5,
+    point.padding = 0.3
+  ) +
+  theme_void() +
+  ggtitle("G.S.A. K-Pop Community") +
+  labs(caption = "Betweenness Centrality. Data Gathered Manually via Instagram") +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    plot.caption = element_text(hjust = 0.5, size = 10, face = "italic")
+  )
+```
+
+Degree centrality and betweenness centrality were chosen so I could find which accounts seem to be the most popular, as well as most connected between sub-groups. By seeing which accounts have high values in both, I think that the G.S.A. K-pop community possibly contains a lot of 'multi-stans' (fans of multiple K-pop groups). 
+
+
+# VIII. Louvain Community Detection 
+```{r louvain community detection}
+g_undirected <- as_undirected(g, mode = "collapse")
+communities <- cluster_louvain(g_undirected)
+V(g_undirected)$community <- membership(communities)
+```
+
+# IX. Graphing Network with Communities Colored
+
+Due to some data entry errors, some outliers were making the graph outputs illegible. I focused the graphing on a limited number of communities for easier readability.
+
+```{r top communities, fig.align='center'}
+# Top 7 communities
+top_7 <- names(sort(table(V(g_undirected)$community), decreasing = TRUE))[1:7]
+nodes_to_keep <- V(g_undirected)[community %in% top_7]
+g_top7 <- induced_subgraph(g_undirected, vids = nodes_to_keep)
+tg_top7 <- as_tbl_graph(g_top7) %>%
+  mutate(degree = centrality_degree())
+
+# Top node per community
+top_nodes <- as_tibble(tg_top7) %>%
+  group_by(community) %>%
+  slice_max(order_by = degree, n = 1) %>%
+  ungroup()
+
+# Layout and coordinates
+layout <- create_layout(tg_top7, layout = "fr")
+top_nodes_with_coords <- left_join(top_nodes, layout, by = "name")
+
+ggraph(layout) +
+  geom_edge_link(alpha = 0.1, color = "darkgray") +
+  geom_node_point(aes(color = as.factor(community)), size = 2) +
+  geom_text_repel(
+    data = top_nodes_with_coords,
+    aes(x = x, y = y, label = name),
+    size = 3,
+    color = "navy",
+    fontface = "bold",
+    segment.color = "navy",
+    box.padding = 0.5,
+    point.padding = 0.3
+  ) +
+  theme_void() +
+  ggtitle("Communities in Greater Seattle K-Pop Network") +
+  labs(
+    color = "Community",
+    caption = "Louvain Community Detection; Usernames Shown Are Top per Community. Data Gathered Manually"
+  ) +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    plot.caption = element_text(hjust = 0.5, size = 10, face = "italic")
+  )
+```
+
+# X. Concluding Thoughts
+
+After conducting various analysis methods, I think that the G.S.A. K-pop community and its members:
+
+- Could be fans of multiple K-pop groups
+- Tend to attend various fan-arranged K-pop events
+- Has key event holders (magicshopinseattle, thekpopempire, skzseattle, seattleonces, seattlexhallyu, caratverseseattle).
+
+I think this could help with some advertising and collaboration decisions and is generally a very fun way to see a starting estimate of fandom populations in the area. This can be furthered by adding some data for community division by geographic location, and following/followed lists from other social medias, like Twitter and TikTok. 
+
